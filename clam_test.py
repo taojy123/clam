@@ -56,11 +56,12 @@ print(private_pem)
 print('============ test for encrypt and decrypt =============')
 
 content = b'hello world!'
-print(content)
+# content = os.urandom(32)
+print(content, len(content))
 
 public_key = serialization.load_pem_public_key(public_pem.encode(), backend=default_backend())
 content_en = public_key.encrypt(content, padding.PKCS1v15())
-print(content_en)
+print(content_en, len(content_en))
 
 private_key = serialization.load_pem_private_key(private_pem.encode(), password=hkey, backend=default_backend())
 content_de = private_key.decrypt(content_en, padding.PKCS1v15())
@@ -113,20 +114,23 @@ assert content_de == b'hello world!'
 print('================== test for aes ctr ==================')
 
 key = os.urandom(32)
-iv = 'InitializationVe'
 
 print(key)
 
-aes = pyaes.AESModeOfOperationCTR(key)
 content = b'hello world!!'
+# content = open('C:/Users/taojy/Documents/aaa.pptx', 'rb').read()
+
+print(content, len(content))
+
+aes = pyaes.AESModeOfOperationCTR(key)
 content_en = aes.encrypt(content)
 
-print(content_en)
+print(content_en, len(content_en))
 
 aes = pyaes.AESModeOfOperationCTR(key)
 content_de = aes.decrypt(content_en)
 
-print(content_de)
+# open('C:/Users/taojy/Documents/aaaa.pptx', 'wb').write(content_de)
 
 assert content == content_de
 
@@ -135,7 +139,6 @@ print('================== test aes for known data ==================')
 
 
 key = b'\x81\x85\xb4T\xf7\xf4\xf8s\xb4\x1b\x12\x94*h\xd0\xd1\xd5\x9f\xc9}(3\xda_\x17\xedS*;\x91 B'
-iv = 'InitializationVe'
 
 aes = pyaes.AESModeOfOperationCTR(key)
 content = b'hello world!!'
