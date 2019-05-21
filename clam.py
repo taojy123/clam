@@ -69,7 +69,7 @@ def generate_keys():
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo
     )
-    public_pem = public_pem.decode()
+    public_pem = public_pem.decode().strip()
 
     private_pem = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
@@ -78,14 +78,21 @@ def generate_keys():
         # BestAvailableEncryption evp_cipher: self._lib.EVP_get_cipherbyname(b"aes-256-cbc")
         # encryption_algorithm=serialization.NoEncryption(),
     )
-    private_pem = private_pem.decode()
+    private_pem = private_pem.decode().strip()
 
-    pubkey.delete(0.0, END)
-    pubkey.insert(END, public_pem)
-    prikey.delete(0.0, END)
-    prikey.insert(END, private_pem)
+    assert len(private_pem) == len(private_pem.encode()) == 1873
 
-    f_passwords.pack_forget()
+    rsa_key_content = public_pem + '\n==========\n' + private_pem
+
+    assert rsa_key_content.startswith('-----BEGIN PUBLIC KEY-----')
+    assert rsa_key_content.endswith('-----END ENCRYPTED PRIVATE KEY-----')
+    assert '-----END PUBLIC KEY-----\n==========\n-----BEGIN ENCRYPTED PRIVATE KEY-----' in rsa_key_content
+    assert len(rsa_key_content.split('\n==========\n')) == 2
+
+    rsa_key.delete(0.0, END)
+    rsa_key.insert(END, rsa_key_content)
+
+    # f_passwords.pack_forget()
     f_keys.pack()
 
 
@@ -101,10 +108,18 @@ def encrypt():
         messagebox.showwarning(title='提示', message='请先选择要加密的文件')
         return
 
-    public_pem = encrypt_pubkey.get(0.0, END).strip()
-    if '-----' not in public_pem:
+    rsa_key_content = encrypt_key.get(0.0, END).strip()
+    if not all([
+            rsa_key_content.startswith('-----BEGIN PUBLIC KEY-----'),
+            rsa_key_content.endswith('-----END ENCRYPTED PRIVATE KEY-----'),
+            '-----END PUBLIC KEY-----\n==========\n-----BEGIN ENCRYPTED PRIVATE KEY-----' in rsa_key_content,
+            len(rsa_key_content.split('\n==========\n')) == 2,
+        ]):
         messagebox.showwarning(title='提示', message='请正确填写加密公钥')
         return
+
+    public_pem, private_pem = rsa_key_content.split('\n==========\n')
+    assert len(private_pem) == 1873
 
     secret = os.urandom(32)
     assert len(secret) == 32
@@ -118,7 +133,7 @@ def encrypt():
     secret_en = public_key.encrypt(secret, padding.PKCS1v15())
     assert len(secret_en) == 256
 
-    content_en = secret_en + content_en
+    content_en = private_pem.encode() + secret_en + content_en
 
     filename += '.cen'
     open(filename, 'wb').write(content_en)
@@ -142,21 +157,17 @@ def decrypt():
         messagebox.showwarning(title='提示', message='请先选择要解密的文件')
         return
 
-    private_pem = decrypt_prikey.get(0.0, END).strip()
-    if '-----' not in private_pem:
-        messagebox.showwarning(title='提示', message='请正确填写解密私钥')
-        return
-
     content_en = open(filename, 'rb').read()
-    secret_en = content_en[:256]
-    content_en = content_en[256:]
+    private_pem = content_en[:1873]
+    secret_en = content_en[1873:1873+256]
+    content_en = content_en[1873+256:]
     
     hkey = HKEY
     hkey = hmac.new(hkey, decrypt_password_a.get().encode(), hashlib.sha256).digest()
     hkey = hmac.new(hkey, decrypt_password_b.get().encode(), hashlib.sha256).digest()
     hkey = hmac.new(hkey, decrypt_password_c.get().encode(), hashlib.sha256).digest()
 
-    private_key = serialization.load_pem_private_key(private_pem.encode(), password=hkey, backend=default_backend())
+    private_key = serialization.load_pem_private_key(private_pem, password=hkey, backend=default_backend())
     secret = private_key.decrypt(secret_en, padding.PKCS1v15())
 
     assert len(secret) == 32
@@ -175,7 +186,7 @@ def decrypt():
 
 
 root = Tk()
-root.title('联合授权加解密工具 clam v1.0 ')
+root.title('联合授权加解密工具 clam v1.1')
 password_a = StringVar()
 password_b = StringVar()
 password_c = StringVar()
@@ -219,26 +230,16 @@ f_passwords.pack()
 
 f_keys = Frame(f1)
 
-Label(f_keys, text='加密公钥:').pack()
-pubkey = Text(f_keys, width=66, height=10)
-pubkey.pack()
-pubkey.delete(0.0, END)
-pubkey.insert(END, 'pub')
-
-Label(f_keys, text='解密私钥:').pack()
-prikey = Text(f_keys, width=66, height=31)
-prikey.pack()
-prikey.delete(0.0, END)
-prikey.insert(END, 'pri')
-
+rsa_key = Text(f_keys, width=66, height=41)
+rsa_key.pack()
 Label(f_keys, text='请务必牢记生成的密钥并保存！！').pack()
 
 
 Button(f2, text="选择要加密的文件", command=select_encrypt_file).pack()
 Entry(f2, textvariable=encrypt_path, width=66).pack()
-Label(f2, text='填写加密公钥').pack()
-encrypt_pubkey = Text(f2, width=66, height=10)
-encrypt_pubkey.pack()
+Label(f2, text='填写加密密钥').pack()
+encrypt_key = Text(f2, width=66, height=15)
+encrypt_key.pack()
 Button(f2, text="加密", command=encrypt).pack()
 
 
@@ -254,9 +255,6 @@ f_decrypt_passwords.pack()
 
 Button(f3, text="选择要解密的文件", command=select_decrypt_file).pack()
 Entry(f3, textvariable=decrypt_path, width=66).pack()
-Label(f3, text='填写解密私钥').pack()
-decrypt_prikey = Text(f3, width=66, height=31)
-decrypt_prikey.pack()
 Button(f3, text="解密", command=decrypt).pack()
 
 
