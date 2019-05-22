@@ -1,13 +1,13 @@
 # python3.7
 # pip install cryptography==2.6.1
-# pip install pyaes==1.6.1
 
 import os
 import hashlib
 import hmac
+import base64
 import traceback
 
-import pyaes
+from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -26,20 +26,19 @@ HKEY = b'clam'
 
 
 def try_run(func):
-
     def f(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except:
+        except Exception as e:
             err = traceback.format_exc()
             messagebox.showerror(title='遇到错误', message=err)
+            print(e)
 
     return f
 
 
 @try_run
 def generate_keys():
-
     if not all([password_a.get(), password_b.get(), password_c.get()]):
         messagebox.showwarning(title='提示', message='请三人都填写密码')
         return
@@ -110,24 +109,22 @@ def encrypt():
 
     rsa_key_content = encrypt_key.get(0.0, END).strip()
     if not all([
-            rsa_key_content.startswith('-----BEGIN PUBLIC KEY-----'),
-            rsa_key_content.endswith('-----END ENCRYPTED PRIVATE KEY-----'),
-            '-----END PUBLIC KEY-----\n==========\n-----BEGIN ENCRYPTED PRIVATE KEY-----' in rsa_key_content,
-            len(rsa_key_content.split('\n==========\n')) == 2,
-        ]):
+        rsa_key_content.startswith('-----BEGIN PUBLIC KEY-----'),
+        rsa_key_content.endswith('-----END ENCRYPTED PRIVATE KEY-----'),
+        '-----END PUBLIC KEY-----\n==========\n-----BEGIN ENCRYPTED PRIVATE KEY-----' in rsa_key_content,
+        len(rsa_key_content.split('\n==========\n')) == 2,
+    ]):
         messagebox.showwarning(title='提示', message='请正确填写加密公钥')
         return
 
     public_pem, private_pem = rsa_key_content.split('\n==========\n')
     assert len(private_pem) == 1873
 
-    secret = os.urandom(32)
-    assert len(secret) == 32
-
     content = open(filename, 'rb').read()
 
-    aes = pyaes.AESModeOfOperationCTR(secret)
-    content_en = aes.encrypt(content)
+    secret = BytesBaseFernet.generate_key()
+    bbf = BytesBaseFernet(secret)
+    content_en = bbf.encrypt(content)
 
     public_key = serialization.load_pem_public_key(public_pem.encode(), backend=default_backend())
     secret_en = public_key.encrypt(secret, padding.PKCS1v15())
@@ -147,7 +144,6 @@ def select_decrypt_file():
 
 @try_run
 def decrypt():
-
     if not all([decrypt_password_a.get(), decrypt_password_b.get(), decrypt_password_c.get()]):
         messagebox.showwarning(title='提示', message='请三人都填写密码')
         return
@@ -159,9 +155,9 @@ def decrypt():
 
     content_en = open(filename, 'rb').read()
     private_pem = content_en[:1873]
-    secret_en = content_en[1873:1873+256]
-    content_en = content_en[1873+256:]
-    
+    secret_en = content_en[1873:1873 + 256]
+    content_en = content_en[1873 + 256:]
+
     hkey = HKEY
     hkey = hmac.new(hkey, decrypt_password_a.get().encode(), hashlib.sha256).digest()
     hkey = hmac.new(hkey, decrypt_password_b.get().encode(), hashlib.sha256).digest()
@@ -172,10 +168,8 @@ def decrypt():
 
     assert len(secret) == 32
 
-
-    aes = pyaes.AESModeOfOperationCTR(secret)
-    content_de = aes.decrypt(content_en)
-
+    bbf = BytesBaseFernet(secret)
+    content_de = bbf.decrypt(content_en)
 
     if filename.endswith('.cen'):
         filename = filename[:-4]
@@ -185,8 +179,33 @@ def decrypt():
     messagebox.showinfo(title='提示', message='解密成功，已保存至 %s' % filename)
 
 
+class BytesBaseFernet(Fernet):
+    """ algorithms：AES-CBC
+    """
+
+    @classmethod
+    def generate_key(cls):
+        key = os.urandom(32)
+        assert len(key) == 32
+        return key
+
+    def __init__(self, key, backend=None):
+        key = base64.urlsafe_b64encode(key)
+        super().__init__(key, backend)
+
+    def encrypt(self, data):
+        result = super().encrypt(data)
+        result = base64.urlsafe_b64decode(result)
+        return result
+
+    def decrypt(self, token, ttl=None):
+        token = base64.urlsafe_b64encode(token)
+        result = super().decrypt(token, ttl)
+        return result
+
+
 root = Tk()
-root.title('联合授权加解密工具 clam v1.1')
+root.title('联合授权加解密工具 clam v1.2')
 password_a = StringVar()
 password_b = StringVar()
 password_c = StringVar()
@@ -210,7 +229,6 @@ n.add(f1, text='生成密钥')
 n.add(f2, text='加密文件')
 n.add(f3, text='解密文件')
 
-
 f_passwords = Frame(f1)
 
 Label(f_passwords, text='请三位依次输入密码：').grid(row=0, column=0, sticky=W)
@@ -227,21 +245,18 @@ Button(f_passwords, text="生成密钥", command=generate_keys).grid(row=4, colu
 
 f_passwords.pack()
 
-
 f_keys = Frame(f1)
 
 rsa_key = Text(f_keys, width=66, height=41)
 rsa_key.pack()
-Label(f_keys, text='请务必牢记生成的密钥并保存！！').pack()
-
+Label(f_keys, text='请务必牢记以上的密钥并保存！！').pack()
 
 Button(f2, text="选择要加密的文件", command=select_encrypt_file).pack()
 Entry(f2, textvariable=encrypt_path, width=66).pack()
-Label(f2, text='填写加密密钥').pack()
-encrypt_key = Text(f2, width=66, height=15)
+Label(f2, text='填写完整的加密密钥').pack()
+encrypt_key = Text(f2, width=66, height=41)
 encrypt_key.pack()
 Button(f2, text="加密", command=encrypt).pack()
-
 
 f_decrypt_passwords = Frame(f3)
 
@@ -252,15 +267,8 @@ Entry(f_decrypt_passwords, textvariable=decrypt_password_c, show='*', width=22).
 
 f_decrypt_passwords.pack()
 
-
 Button(f3, text="选择要解密的文件", command=select_decrypt_file).pack()
 Entry(f3, textvariable=decrypt_path, width=66).pack()
 Button(f3, text="解密", command=decrypt).pack()
 
-
 root.mainloop()
-
-
-
-
-
