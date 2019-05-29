@@ -195,7 +195,7 @@ def core_generate(passwords):
 
 def core_encrypt(rsa_key_content, infile, out=''):
 
-    rsa_key_content = rsa_key_content.replace('\r\n', '\n')
+    rsa_key_content = rsa_key_content.replace('\r\n', '\n').strip()
 
     content = open(infile, 'rb').read()
 
