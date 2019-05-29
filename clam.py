@@ -274,6 +274,7 @@ if len(sys.argv) > 1:
         rsa_key_content = core_generate(passwords)
         if out:
             open(out, 'w').write(rsa_key_content)
+            print('outputing: %s' % out)
             print('generate successful')
         else:
             print(rsa_key_content)
