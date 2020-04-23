@@ -87,7 +87,7 @@ def aes_decode(key, content):
 
 KEY = 'debe3510fcca4fc7'
 
-key = input('请输入密码(默认为 debe3510fcca4fc7):') or KEY
+key = input('请输入加密密钥(默认为 debe3510fcca4fc7):') or KEY
 
 fnames = os.listdir('.')
 for fname in fnames:
@@ -100,7 +100,7 @@ for fname in fnames:
 	for line in lines:
 		line = line.strip()
 		if not line or ',' in line:
-			content
+			continue
 
 		en = aes_encode(key, line)
 		line += ',' + en + '\n'
